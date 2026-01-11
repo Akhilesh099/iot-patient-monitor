@@ -16,7 +16,7 @@ app.use(express.json());
 // STATE
 // --------------------
 let lastDataTime = Date.now();
-let status = "DISCONNECTED";
+let disconnectedEmitted = false;
 
 // --------------------
 // ROOT (optional, avoids confusion)
@@ -43,14 +43,12 @@ app.post("/api/data", (req, res) => {
     }
 
     lastDataTime = Date.now();
+    disconnectedEmitted = false;
 
     // Alert logic
-    // "If heart_rate > 120 or spo2 < 90" logic from previous context, 
-    // keeping it consistent with the user's snippet logic below.
+    let status = "NORMAL";
     if (heart_rate > 120 || spo2 < 90) {
         status = "CRITICAL";
-    } else {
-        status = "NORMAL";
     }
 
     const payload = {
@@ -71,12 +69,15 @@ app.post("/api/data", (req, res) => {
 // DISCONNECT WATCHDOG
 // --------------------
 setInterval(() => {
-    if (Date.now() - lastDataTime > 5000) {
+    const isDisconnected = Date.now() - lastDataTime > 5000;
+
+    if (isDisconnected && !disconnectedEmitted) {
         io.emit("vitals", {
             status: "DISCONNECTED",
             heart_rate: null,
             spo2: null
         });
+        disconnectedEmitted = true;
     }
 }, 3000);
 
