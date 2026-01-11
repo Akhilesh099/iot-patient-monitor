@@ -1,259 +1,289 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import socket from './services/socket';
-import VitalCard from './components/VitalCard';
-import LiveChart from './components/LiveChart'; // Re-import Chart
-import AlertPopup from './components/AlertPopup';
-import {
-  Activity, LayoutDashboard, Users, FileText, Settings,
-  Bell, Search, Menu, User, Calendar, ShieldAlert
-} from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Activity, Droplets, AlertTriangle, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
 import clsx from 'clsx';
 
-// Mock Patient Profile Component
-const PatientProfile = () => (
-  <div className="bg-[#1e293b]/50 border border-slate-800 p-6 rounded-xl flex items-center gap-6 backdrop-blur-sm">
-    <div className="w-20 h-20 rounded-full bg-slate-700 overflow-hidden border-2 border-slate-600 relative">
-      <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-bold text-2xl">JD</div>
-    </div>
-    <div>
-      <h2 className="text-xl font-bold text-white">John Doe</h2>
-      <div className="flex gap-4 mt-1 text-sm text-slate-400 font-mono">
-        <span>ID: <b className="text-slate-200">#8492-BX</b></span>
-        <span>AGE: <b className="text-slate-200">45</b></span>
-        <span>BLOOD: <b className="text-slate-200">O+</b></span>
-      </div>
-      <div className="mt-3 flex gap-2">
-        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase border border-blue-500/20">Admitted: 2d ago</span>
-        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-bold rounded uppercase border border-purple-500/20">Condition: Stable</span>
-      </div>
-    </div>
-  </div>
-);
-
-function App() {
-  const [vitals, setVitals] = useState({ heart_rate: 0, spo2: 0, status: 'NORMAL' });
-  const [history, setHistory] = useState([]); // Restore history for chart
-  const [alert, setAlert] = useState(null);
-  const [deviceStatus, setDeviceStatus] = useState('DISCONNECTED');
-  const [currentTime, setCurrentTime] = useState(new Date());
+const App = () => {
+  const [vitals, setVitals] = useState({ heart_rate: 0, spo2: 0 });
+  const [history, setHistory] = useState([]);
+  const [status, setStatus] = useState('DISCONNECTED'); // NORMAL, CRITICAL, DISCONNECTED
+  const [acknowledged, setAcknowledged] = useState(false); // Track if user dismissed current alert
+  const [deviceConnected, setDeviceConnected] = useState(false);
 
   // Audio Ref
   const audioContextRef = useRef(null);
   const oscillatorRef = useRef(null);
 
-  // Clock
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Sound Control
+  // --- SOUND ENGINE ---
   const playAlarm = () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
-    if (oscillatorRef.current) return;
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+    if (oscillatorRef.current) return; // Already playing
 
+    // Siren Logic (Modulated Square Wave)
     const osc = audioContextRef.current.createOscillator();
     const gain = audioContextRef.current.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(800, audioContextRef.current.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(400, audioContextRef.current.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.5, audioContextRef.current.currentTime);
-    osc.connect(gain);
-    gain.connect(audioContextRef.current.destination);
-    osc.start();
 
-    // Siren LFO
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(880, audioContextRef.current.currentTime); // A5
+    osc.frequency.linearRampToValueAtTime(440, audioContextRef.current.currentTime + 0.5); // Drop to A4
+
+    // LFO for "Warble"
     const lfo = audioContextRef.current.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 2;
+    lfo.type = 'square';
+    lfo.frequency.value = 4; // Hz
     const lfoGain = audioContextRef.current.createGain();
-    lfoGain.gain.value = 200;
+    lfoGain.gain.value = 50;
+
     lfo.connect(lfoGain);
     lfoGain.connect(osc.frequency);
+
+    gain.gain.setValueAtTime(0.3, audioContextRef.current.currentTime);
+
+    osc.connect(gain);
+    gain.connect(audioContextRef.current.destination);
+
+    osc.start();
     lfo.start();
+
     oscillatorRef.current = { osc, lfo };
   };
 
   const stopAlarm = () => {
     if (oscillatorRef.current) {
-      try { oscillatorRef.current.osc.stop(); oscillatorRef.current.lfo.stop(); } catch (e) { }
+      try {
+        oscillatorRef.current.osc.stop();
+        oscillatorRef.current.lfo.stop();
+      } catch (e) { }
       oscillatorRef.current = null;
     }
   };
 
+  // --- LOGIC ENGINE ---
   useEffect(() => {
     socket.on('connect', () => console.log('Connected'));
+
     socket.on('disconnect', () => {
-      setDeviceStatus('DISCONNECTED');
+      setDeviceConnected(false);
+      setStatus('DISCONNECTED');
       stopAlarm();
     });
 
     socket.on('vitals', (data) => {
       if (data.heart_rate && data.spo2) {
-        setDeviceStatus(data.status === 'CRITICAL' ? 'CRITICAL' : 'ONLINE');
-        setVitals(prev => ({ ...prev, ...data }));
+        setDeviceConnected(true);
+        setVitals(data);
+        const newStatus = data.status || 'NORMAL';
+        setStatus(newStatus);
 
-        // Update Chart History
-        setHistory(prev => {
-          const newHistory = [...prev, { ...data, timestamp: new Date().toLocaleTimeString() }];
-          return newHistory.slice(-20); // Keep last 20 points
-        });
-
-        if (data.status === 'CRITICAL') {
-          playAlarm();
-          setAlert({ message: 'CRITICAL VITALS DETECTED', details: { hr: data.heart_rate, spo2: data.spo2 } });
-        } else {
+        // 1. AUTO-DISMISS: If normal, clear alert & reset acknowledgment
+        if (newStatus === 'NORMAL') {
           stopAlarm();
-          setAlert(null);
+          setAcknowledged(false); // Reset so next alarm triggers
         }
-      } else if (data.status === 'DISCONNECTED') {
-        setDeviceStatus('DISCONNECTED');
-        stopAlarm();
+
+        // 2. SMART ALARM: Trigger only if CRITICAL and NOT acknowledged
+        else if (newStatus === 'CRITICAL') {
+          if (!acknowledged) {
+            playAlarm();
+          } else {
+            stopAlarm(); // Ensure it stays off if acknowledged
+          }
+        }
+
+        // Update History
+        setHistory(prev => {
+          const newHistory = [...prev, { ...data, time: new Date().toLocaleTimeString().slice(0, 5) }];
+          return newHistory.slice(-20);
+        });
       }
     });
 
     return () => {
       socket.off('connect'); socket.off('disconnect'); socket.off('vitals'); stopAlarm();
     };
-  }, []);
+  }, [acknowledged]); // Re-run logic if acknowledged state changes
 
-  const isCritical = vitals.status === 'CRITICAL';
-  const isDisconnected = deviceStatus === 'DISCONNECTED';
+  // Manual Dismiss Handler
+  const handleDismiss = () => {
+    stopAlarm();
+    setAcknowledged(true); // Mute until next distinct NORMAL -> CRITICAL cycle
+  };
 
-  // Resume Audio Context on interaction
-  useEffect(() => {
-    const handleUserGesture = () => {
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume();
-      }
-    };
-    window.addEventListener('click', handleUserGesture);
-    return () => window.removeEventListener('click', handleUserGesture);
-  }, []);
-
-
+  // --- RENDER ---
   return (
-    <div className="flex h-screen bg-[#0f172a] text-slate-200 font-sans overflow-hidden">
+    <div className={clsx(
+      "min-h-screen bg-[#050505] text-white p-4 md:p-8 font-sans transition-all duration-700 flex flex-col gap-8",
+      status === 'CRITICAL' && !acknowledged && "shadow-[inset_0_0_100px_rgba(220,38,38,0.5)]"
+    )}>
 
-      {/* Sidebar Navigation */}
-      <aside className="w-20 lg:w-64 bg-[#020617] border-r border-slate-800 flex flex-col transition-all duration-300">
-        <div className="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-slate-800">
-          <ShieldAlert className="w-8 h-8 text-blue-500" />
-          <span className="hidden lg:block ml-3 font-bold text-xl tracking-tight text-white">VITALEYE</span>
-        </div>
-
-        <nav className="flex-1 p-4 space-y-2">
-          {[
-            { icon: LayoutDashboard, label: 'Monitor', active: true },
-            { icon: Users, label: 'Patients' },
-            { icon: FileText, label: 'Reports' },
-            { icon: Settings, label: 'Settings' }
-          ].map((item) => (
-            <div key={item.label} className={clsx(
-              "flex items-center justify-center lg:justify-start gap-3 px-3 py-3 rounded-xl transition-all cursor-pointer group",
-              item.active ? "bg-blue-600/10 text-blue-400 border border-blue-600/20" : "hover:bg-slate-800 text-slate-500"
-            )}>
-              <item.icon className="w-5 h-5 group-hover:text-blue-400 transition-colors" />
-              <span className="hidden lg:block font-medium text-sm">{item.label}</span>
-            </div>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center justify-center lg:justify-start gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
-              <User className="w-4 h-4" />
-            </div>
-            <div className="hidden lg:block">
-              <div className="text-xs font-bold text-white">Dr. Smith</div>
-              <div className="text-[10px] text-slate-500">Cardiology</div>
-            </div>
+      {/* Header */}
+      <header className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-gray-800 pb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)]">
+            <Activity className="text-white w-7 h-7" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">
+              ICU VITALEYE
+            </h1>
+            <p className="text-xs text-gray-500 font-mono tracking-[0.2em] uppercase">Advanced Monitoring System</p>
           </div>
         </div>
-      </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-
-        {/* Top Header */}
-        <header className="h-16 border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur-md flex items-center justify-between px-6 z-20">
-          <div className="flex items-center gap-4 text-slate-400 text-sm font-mono">
-            <Calendar className="w-4 h-4" />
-            <span>{currentTime.toLocaleDateString()}</span>
-            <span className="w-px h-4 bg-slate-700 mx-2" />
-            <span>{currentTime.toLocaleTimeString()}</span>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="relative cursor-pointer hover:text-white transition-colors">
-              <Bell className="w-5 h-5" />
-              {isCritical && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping" />}
-            </div>
+        <div className="flex items-center gap-4">
+          <div className={clsx(
+            "px-5 py-2 rounded-full border flex items-center gap-3 text-sm font-bold tracking-wide shadow-2xl backdrop-blur-md",
+            status === 'DISCONNECTED' ? "border-gray-700 bg-gray-900/80 text-gray-400" :
+              (status === 'NORMAL' ? "border-emerald-500/30 bg-emerald-950/30 text-emerald-400" : "border-red-500 bg-red-600 text-white animate-pulse")
+          )}>
             <div className={clsx(
-              "px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2",
-              isDisconnected ? "bg-slate-800 border-slate-700 text-slate-400" : (isCritical ? "bg-red-500/10 border-red-500 text-red-500" : "bg-emerald-500/10 border-emerald-500/50 text-emerald-500")
-            )}>
-              <span className={clsx("w-2 h-2 rounded-full", isDisconnected ? "bg-slate-500" : (isCritical ? "bg-red-500" : "bg-emerald-500"))} />
-              {isDisconnected ? 'OFFLINE' : (isCritical ? 'CRITICAL ALERT' : 'SYSTEM ONLINE')}
-            </div>
+              "w-2.5 h-2.5 rounded-full",
+              status === 'DISCONNECTED' ? "bg-gray-500" :
+                (status === 'NORMAL' ? "bg-emerald-400 animate-pulse" : "bg-white animate-ping")
+            )} />
+            {status === 'DISCONNECTED' ? 'OFFLINE' : (status === 'NORMAL' ? 'STABLE' : 'CRITICAL')}
           </div>
-        </header>
-
-        {/* Dashboard Canvas */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-6">
-          <AlertPopup alert={alert} onDismiss={() => setAlert(null)} />
-
-          {/* Top Row: Profile + Vitals */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* Patient Profile Widget */}
-            <div className="xl:col-span-1">
-              <PatientProfile />
-              {/* Add a mini status log or something below if space permits */}
-              <div className="mt-6 p-4 rounded-xl border border-slate-800 bg-[#1e293b]/30">
-                <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Recent Activity</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                    <span>SpO2 dropped to 94%</span>
-                    <span className="ml-auto opacity-50">2m ago</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    <span>Routine check complete</span>
-                    <span className="ml-auto opacity-50">15m ago</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Vitals Widgets */}
-            <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <VitalCard
-                title="Heart Rate"
-                value={isDisconnected ? '--' : vitals.heart_rate}
-                type="heart"
-                isCritical={isCritical && !isDisconnected}
-              />
-              <VitalCard
-                title="Oxygen Level"
-                value={isDisconnected ? '--' : vitals.spo2}
-                type="spo2"
-                isCritical={isCritical && !isDisconnected}
-              />
-            </div>
-          </div>
-
-          {/* Bottom Row: Live Graph */}
-          <div className="w-full">
-            <LiveChart data={history} />
-          </div>
-
         </div>
-      </main>
+      </header>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1">
+
+        {/* Heart Rate Widget */}
+        <div className="bg-[#0a0a0a] border border-gray-800 p-8 rounded-[2rem] relative overflow-hidden group hover:border-red-500/30 transition-all duration-500 shadow-xl">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/5 blur-[80px] rounded-full pointer-events-none" />
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-500/10 rounded-lg text-red-500"><Activity size={18} /></div>
+              <span className="text-gray-400 font-bold tracking-wider text-xs">HEART RATE</span>
+            </div>
+            {status === 'CRITICAL' && <span className="text-red-500 animate-pulse text-xs font-bold">⚠️ HIGH</span>}
+          </div>
+
+          <div className="flex items-baseline gap-4">
+            <span className={clsx(
+              "text-8xl font-black tabular-nums tracking-tighter drop-shadow-2xl",
+              status === 'DISCONNECTED' ? "text-gray-700" : "text-white"
+            )}>
+              {status === 'DISCONNECTED' ? '--' : vitals.heart_rate}
+            </span>
+            <span className="text-red-500 text-sm font-bold uppercase tracking-widest mb-4">BPM</span>
+          </div>
+
+          {/* Heart Graphic */}
+          <div className="mt-8 flex items-center gap-2">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
+              <div key={i} className="flex-1 bg-gray-800 h-8 rounded-sm overflow-hidden flex items-end">
+                <div
+                  className="w-full bg-red-600/80 transition-all duration-300"
+                  style={{ height: `${Math.random() * 100}%`, opacity: status === 'DISCONNECTED' ? 0.2 : 1 }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* SpO2 Widget */}
+        <div className="bg-[#0a0a0a] border border-gray-800 p-8 rounded-[2rem] relative overflow-hidden group hover:border-cyan-500/30 transition-all duration-500 shadow-xl">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-600/5 blur-[80px] rounded-full pointer-events-none" />
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-cyan-500/10 rounded-lg text-cyan-500"><Droplets size={18} /></div>
+              <span className="text-gray-400 font-bold tracking-wider text-xs">OXYGEN</span>
+            </div>
+          </div>
+
+          <div className="flex items-baseline gap-4">
+            <span className={clsx(
+              "text-8xl font-black tabular-nums tracking-tighter drop-shadow-2xl",
+              status === 'DISCONNECTED' ? "text-gray-700" : "text-white"
+            )}>
+              {status === 'DISCONNECTED' ? '--' : vitals.spo2}
+            </span>
+            <span className="text-cyan-500 text-sm font-bold uppercase tracking-widest mb-4">%</span>
+          </div>
+
+          <div className="mt-8 w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-cyan-500 shadow-[0_0_15px_currentColor] transition-all duration-1000"
+              style={{ width: `${vitals.spo2}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Control & Alert Center */}
+        <div className="flex flex-col gap-6">
+
+          {/* Status Panel */}
+          <div className="bg-[#0a0a0a] border border-gray-800 p-6 rounded-[2rem] flex items-center gap-5">
+            <div className={clsx("p-4 rounded-2xl", status === 'DISCONNECTED' ? "bg-gray-800 text-gray-500" : "bg-emerald-900/20 text-emerald-500")}>
+              <ShieldCheck size={32} />
+            </div>
+            <div>
+              <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest">System Status</h3>
+              <p className="text-xl font-bold text-white">{status === 'DISCONNECTED' ? 'DISCONNECTED' : 'MONITORING ACTIVE'}</p>
+            </div>
+          </div>
+
+          {/* ALERT POPUP (Smart Logic) */}
+          {status === 'CRITICAL' && !acknowledged && (
+            <div className="flex-1 bg-red-600 rounded-[2rem] p-8 flex flex-col justify-center items-center text-center animate-bounce shadow-[0_0_50px_rgba(220,38,38,0.5)]">
+              <AlertTriangle size={64} className="text-white mb-4" />
+              <h2 className="text-3xl font-black text-white uppercase mb-2">CRITICAL ALERT</h2>
+              <p className="text-red-100 font-bold mb-6">VITALS OUT OF SAFE RANGE</p>
+
+              <button
+                onClick={handleDismiss}
+                className="bg-white text-red-600 px-8 py-3 rounded-xl font-bold text-lg hover:scale-105 active:scale-95 transition-transform flex items-center gap-2 shadow-lg"
+              >
+                <VolumeX size={20} />
+                ACKNOWLEDGE & SILENCE
+              </button>
+            </div>
+          )}
+
+          {/* Acknowledged State */}
+          {status === 'CRITICAL' && acknowledged && (
+            <div className="flex-1 bg-red-900/20 border-2 border-red-900/50 border-dashed rounded-[2rem] p-8 flex flex-col justify-center items-center text-center">
+              <VolumeX size={48} className="text-red-500 mb-2 opacity-50" />
+              <h3 className="text-xl font-bold text-red-400">ALARM SILENCED</h3>
+              <p className="text-red-500/60 text-sm mt-2">Monitoring continues. Alert will reset when vitals stabilize.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Live Graph Section */}
+        <div className="lg:col-span-3 bg-[#0a0a0a] border border-gray-800 p-6 rounded-[2rem] relative">
+          <div className="flex items-center gap-3 mb-6 px-2">
+            <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_currentColor]" />
+            <span className="text-xs font-bold text-gray-500 tracking-[0.2em] uppercase">Real-Time ECG Feed</span>
+          </div>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={history}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis dataKey="time" hide />
+                <YAxis domain={['auto', 'auto']} hide />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '12px', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                />
+                <Line type="monotone" dataKey="heart_rate" stroke="#ef4444" strokeWidth={4} dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="spo2" stroke="#06b6d4" strokeWidth={4} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
-}
+};
 
 export default App;
