@@ -1,19 +1,51 @@
 import React, { useEffect, useState, useRef } from 'react';
 import socket from './services/socket';
 import VitalCard from './components/VitalCard';
+import LiveChart from './components/LiveChart'; // Re-import Chart
 import AlertPopup from './components/AlertPopup';
-import { Activity, Wifi, WifiOff, ShieldAlert, Heart, Zap } from 'lucide-react';
+import {
+  Activity, LayoutDashboard, Users, FileText, Settings,
+  Bell, Search, Menu, User, Calendar, ShieldAlert
+} from 'lucide-react';
 import clsx from 'clsx';
+
+// Mock Patient Profile Component
+const PatientProfile = () => (
+  <div className="bg-[#1e293b]/50 border border-slate-800 p-6 rounded-xl flex items-center gap-6 backdrop-blur-sm">
+    <div className="w-20 h-20 rounded-full bg-slate-700 overflow-hidden border-2 border-slate-600 relative">
+      <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-bold text-2xl">JD</div>
+    </div>
+    <div>
+      <h2 className="text-xl font-bold text-white">John Doe</h2>
+      <div className="flex gap-4 mt-1 text-sm text-slate-400 font-mono">
+        <span>ID: <b className="text-slate-200">#8492-BX</b></span>
+        <span>AGE: <b className="text-slate-200">45</b></span>
+        <span>BLOOD: <b className="text-slate-200">O+</b></span>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase border border-blue-500/20">Admitted: 2d ago</span>
+        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-bold rounded uppercase border border-purple-500/20">Condition: Stable</span>
+      </div>
+    </div>
+  </div>
+);
 
 function App() {
   const [vitals, setVitals] = useState({ heart_rate: 0, spo2: 0, status: 'NORMAL' });
+  const [history, setHistory] = useState([]); // Restore history for chart
   const [alert, setAlert] = useState(null);
   const [deviceStatus, setDeviceStatus] = useState('DISCONNECTED');
-  const [deviceConnected, setDeviceConnected] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   // Audio Ref
   const audioContextRef = useRef(null);
   const oscillatorRef = useRef(null);
+
+  // Clock
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Sound Control
   const playAlarm = () => {
@@ -54,19 +86,22 @@ function App() {
   useEffect(() => {
     socket.on('connect', () => console.log('Connected'));
     socket.on('disconnect', () => {
-      setDeviceConnected(false);
       setDeviceStatus('DISCONNECTED');
       stopAlarm();
     });
 
     socket.on('vitals', (data) => {
       if (data.heart_rate && data.spo2) {
-        setDeviceConnected(true);
-        const newStatus = data.status || 'NORMAL';
-        setDeviceStatus(newStatus === 'CRITICAL' ? 'CRITICAL' : 'ONLINE');
-        setVitals(prev => ({ ...prev, ...data, status: newStatus }));
+        setDeviceStatus(data.status === 'CRITICAL' ? 'CRITICAL' : 'ONLINE');
+        setVitals(prev => ({ ...prev, ...data }));
 
-        if (newStatus === 'CRITICAL') {
+        // Update Chart History
+        setHistory(prev => {
+          const newHistory = [...prev, { ...data, timestamp: new Date().toLocaleTimeString() }];
+          return newHistory.slice(-20); // Keep last 20 points
+        });
+
+        if (data.status === 'CRITICAL') {
           playAlarm();
           setAlert({ message: 'CRITICAL VITALS DETECTED', details: { hr: data.heart_rate, spo2: data.spo2 } });
         } else {
@@ -74,7 +109,6 @@ function App() {
           setAlert(null);
         }
       } else if (data.status === 'DISCONNECTED') {
-        setDeviceConnected(false);
         setDeviceStatus('DISCONNECTED');
         stopAlarm();
       }
@@ -101,76 +135,119 @@ function App() {
 
 
   return (
-    <div className="min-h-screen bg-[#050b14] text-white font-sans overflow-hidden flex flex-col">
+    <div className="flex h-screen bg-[#0f172a] text-slate-200 font-sans overflow-hidden">
 
-      {/* Top Header - Matches Image */}
-      <header className="h-20 bg-[#020408] border-b border-[#1f2937] px-8 flex items-center justify-between relative shadow-lg">
-
-        {/* Left: Logo */}
-        <div className="flex items-center gap-3">
-          <ShieldAlert className="w-8 h-8 text-white" />
-          <span className="text-2xl font-bold tracking-tight text-white">ICU VITALEYE</span>
+      {/* Sidebar Navigation */}
+      <aside className="w-20 lg:w-64 bg-[#020617] border-r border-slate-800 flex flex-col transition-all duration-300">
+        <div className="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-slate-800">
+          <ShieldAlert className="w-8 h-8 text-blue-500" />
+          <span className="hidden lg:block ml-3 font-bold text-xl tracking-tight text-white">VITALEYE</span>
         </div>
 
-        {/* Center: Emergency Alert Banner (Only Visible if Critical) */}
-        {isCritical && (
-          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-red-600 px-8 py-2 rounded-lg animate-pulse shadow-[0_0_30px_rgba(220,38,38,0.6)]">
-            <span className="text-xl">🚨</span>
-            <span className="font-bold tracking-wider uppercase">EMERGENCY ALERT: Patient Vitals Unstable! Check Immediately!</span>
-            <span className="text-xl">🚨</span>
-          </div>
-        )}
-
-        {/* Right: Device Status */}
-        <div className="flex items-center gap-3">
-          <div className={clsx(
-            "w-4 h-4 rounded-full shadow-[0_0_10px_currentColor]",
-            isDisconnected ? "bg-gray-500 text-gray-500" : (isCritical ? "bg-red-500 text-red-500 animate-ping" : "bg-green-500 text-green-500")
-          )} />
-          <span className="font-mono text-sm tracking-widest text-[#8899ac] uppercase">
-            DEVICE {isDisconnected ? 'OFFLINE' : 'ONLINE'}
-          </span>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex items-center justify-center p-8 relative">
-        <AlertPopup alert={alert} onDismiss={() => setAlert(null)} />
-
-        {/* Grid Container */}
-        <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-          {/* Heart Rate Card */}
-          <VitalCard
-            title="HEART RATE (BPM)"
-            value={isDisconnected ? '--' : vitals.heart_rate}
-            type="heart"
-            isCritical={isCritical && !isDisconnected}
-          />
-
-          {/* SpO2 Card */}
-          <VitalCard
-            title="SpO₂ (%)"
-            value={isDisconnected ? '--' : vitals.spo2}
-            type="spo2"
-            isCritical={isCritical && !isDisconnected}
-          />
-
-          {/* Status Card (Custom for exact match) */}
-          <div className={clsx(
-            "h-[300px] rounded-2xl border-4 flex flex-col items-center justify-center text-center bg-[#0a0f16] shadow-2xl transition-colors duration-300",
-            isCritical ? "border-red-600 shadow-[0_0_50px_rgba(220,38,38,0.2)]" : "border-gray-800"
-          )}>
-            <h3 className="text-gray-400 font-bold tracking-widest uppercase mb-4 text-lg">STATUS</h3>
-            <div className={clsx(
-              "text-6xl font-black tracking-tighter mb-4",
-              isCritical ? "text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]" : (isDisconnected ? "text-gray-500" : "text-emerald-500")
+        <nav className="flex-1 p-4 space-y-2">
+          {[
+            { icon: LayoutDashboard, label: 'Monitor', active: true },
+            { icon: Users, label: 'Patients' },
+            { icon: FileText, label: 'Reports' },
+            { icon: Settings, label: 'Settings' }
+          ].map((item) => (
+            <div key={item.label} className={clsx(
+              "flex items-center justify-center lg:justify-start gap-3 px-3 py-3 rounded-xl transition-all cursor-pointer group",
+              item.active ? "bg-blue-600/10 text-blue-400 border border-blue-600/20" : "hover:bg-slate-800 text-slate-500"
             )}>
-              {isDisconnected ? "OFFLINE" : (isCritical ? "CRITICAL" : "NORMAL")}
+              <item.icon className="w-5 h-5 group-hover:text-blue-400 transition-colors" />
+              <span className="hidden lg:block font-medium text-sm">{item.label}</span>
             </div>
-            <div className="text-sm font-mono text-gray-500 uppercase tracking-widest">
-              {isCritical ? "Automatic Alert" : "Monitoring Active"}
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-slate-800">
+          <div className="flex items-center justify-center lg:justify-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
+              <User className="w-4 h-4" />
             </div>
+            <div className="hidden lg:block">
+              <div className="text-xs font-bold text-white">Dr. Smith</div>
+              <div className="text-[10px] text-slate-500">Cardiology</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col relative overflow-hidden">
+
+        {/* Top Header */}
+        <header className="h-16 border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur-md flex items-center justify-between px-6 z-20">
+          <div className="flex items-center gap-4 text-slate-400 text-sm font-mono">
+            <Calendar className="w-4 h-4" />
+            <span>{currentTime.toLocaleDateString()}</span>
+            <span className="w-px h-4 bg-slate-700 mx-2" />
+            <span>{currentTime.toLocaleTimeString()}</span>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <div className="relative cursor-pointer hover:text-white transition-colors">
+              <Bell className="w-5 h-5" />
+              {isCritical && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping" />}
+            </div>
+            <div className={clsx(
+              "px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2",
+              isDisconnected ? "bg-slate-800 border-slate-700 text-slate-400" : (isCritical ? "bg-red-500/10 border-red-500 text-red-500" : "bg-emerald-500/10 border-emerald-500/50 text-emerald-500")
+            )}>
+              <span className={clsx("w-2 h-2 rounded-full", isDisconnected ? "bg-slate-500" : (isCritical ? "bg-red-500" : "bg-emerald-500"))} />
+              {isDisconnected ? 'OFFLINE' : (isCritical ? 'CRITICAL ALERT' : 'SYSTEM ONLINE')}
+            </div>
+          </div>
+        </header>
+
+        {/* Dashboard Canvas */}
+        <div className="flex-1 p-6 overflow-y-auto space-y-6">
+          <AlertPopup alert={alert} onDismiss={() => setAlert(null)} />
+
+          {/* Top Row: Profile + Vitals */}
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {/* Patient Profile Widget */}
+            <div className="xl:col-span-1">
+              <PatientProfile />
+              {/* Add a mini status log or something below if space permits */}
+              <div className="mt-6 p-4 rounded-xl border border-slate-800 bg-[#1e293b]/30">
+                <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Recent Activity</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    <span>SpO2 dropped to 94%</span>
+                    <span className="ml-auto opacity-50">2m ago</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>Routine check complete</span>
+                    <span className="ml-auto opacity-50">15m ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Vitals Widgets */}
+            <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <VitalCard
+                title="Heart Rate"
+                value={isDisconnected ? '--' : vitals.heart_rate}
+                type="heart"
+                isCritical={isCritical && !isDisconnected}
+              />
+              <VitalCard
+                title="Oxygen Level"
+                value={isDisconnected ? '--' : vitals.spo2}
+                type="spo2"
+                isCritical={isCritical && !isDisconnected}
+              />
+            </div>
+          </div>
+
+          {/* Bottom Row: Live Graph */}
+          <div className="w-full">
+            <LiveChart data={history} />
           </div>
 
         </div>
