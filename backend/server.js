@@ -36,6 +36,9 @@ app.get("/health", (req, res) => {
 // MAIN DATA ENDPOINT
 // --------------------
 app.post("/api/data", (req, res) => {
+    // 1. LOG TIMESTAMP (Debug Latency)
+    console.log("POST RECEIVED @", Date.now(), req.body);
+
     const { heart_rate, spo2 } = req.body;
 
     if (!heart_rate || !spo2) {
@@ -45,22 +48,12 @@ app.post("/api/data", (req, res) => {
     lastDataTime = Date.now();
     disconnectedEmitted = false;
 
-    // Alert logic
-    let status = "NORMAL";
-    if (heart_rate > 120 || spo2 < 90) {
-        status = "CRITICAL";
-    }
-
-    const payload = {
+    // 2. IMMEDIATE EMIT (Zero Delay)
+    io.emit("vitals", {
         heart_rate,
         spo2,
-        status,
         timestamp: new Date().toISOString()
-    };
-
-    console.log("Received:", payload);
-    console.log("EMITTING VITALS:", payload);
-    io.emit("vitals", payload);
+    });
 
     res.status(200).json({ success: true });
 });
@@ -69,7 +62,7 @@ app.post("/api/data", (req, res) => {
 // DISCONNECT WATCHDOG
 // --------------------
 setInterval(() => {
-    const isDisconnected = Date.now() - lastDataTime > 5000;
+    const isDisconnected = Date.now() - lastDataTime > 4000; // 4s timeout
 
     if (isDisconnected && !disconnectedEmitted) {
         io.emit("vitals", {
@@ -79,7 +72,7 @@ setInterval(() => {
         });
         disconnectedEmitted = true;
     }
-}, 3000);
+}, 1000); // Check every second
 
 // --------------------
 // SOCKET
