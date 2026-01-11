@@ -1,24 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import socket from './services/socket';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
-import { Activity, Droplets, Volume2, VolumeX, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
+import { Volume2, VolumeX, Wifi, WifiOff, AlertTriangle, Menu, Battery, Activity } from 'lucide-react';
 import clsx from 'clsx';
+import HeroHeartRate from './components/HeroHeartRate';
+import SpO2Panel from './components/SpO2Panel';
+import ECGGraph from './components/ECGGraph';
+import GlassPanel from './components/GlassPanel';
 
 const App = () => {
   // -------------------------------------------------------------------------
   // STATE
   // -------------------------------------------------------------------------
   const [data, setData] = useState({ heart_rate: '--', spo2: '--' });
-  const [history, setHistory] = useState([]); // Graph data
-  const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED'); // CONNECTED, DISCONNECTED
-  const [clinicalStatus, setClinicalStatus] = useState('NORMAL'); // NORMAL, WARNING, CRITICAL
-  const [isAudioMuted, setIsAudioMuted] = useState(false); // Acknowledge state
+  const [history, setHistory] = useState([]);
+  const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED');
+  const [clinicalStatus, setClinicalStatus] = useState('NORMAL');
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const audioRef = useRef(null);
   const audioIntervalRef = useRef(null);
 
   // -------------------------------------------------------------------------
-  // AUDIO ENGINE (Zero Latency Loop)
+  // AUDIO ENGINE
   // -------------------------------------------------------------------------
   const playAlarmSound = () => {
     if (!audioRef.current) {
@@ -27,32 +31,24 @@ const App = () => {
     if (audioRef.current.state === 'suspended') {
       audioRef.current.resume();
     }
-
-    // Prevent stacking interval
     if (audioIntervalRef.current) return;
 
     const beep = () => {
       const osc = audioRef.current.createOscillator();
       const gain = audioRef.current.createGain();
-
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, audioRef.current.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(440, audioRef.current.currentTime + 0.15);
-
-      gain.gain.setValueAtTime(0.5, audioRef.current.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioRef.current.currentTime + 0.15);
-
+      osc.type = 'sawtooth'; // More aggressive for medical alarm
+      osc.frequency.setValueAtTime(900, audioRef.current.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(800, audioRef.current.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.3, audioRef.current.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioRef.current.currentTime + 0.1);
       osc.connect(gain);
       gain.connect(audioRef.current.destination);
-
       osc.start();
-      osc.stop(audioRef.current.currentTime + 0.2);
+      osc.stop(audioRef.current.currentTime + 0.15);
     };
 
-    // Immediate first beep
     beep();
-    // Loop every 500ms (High urgency)
-    audioIntervalRef.current = setInterval(beep, 500);
+    audioIntervalRef.current = setInterval(beep, 400); // Faster pulse
   };
 
   const stopAlarmSound = () => {
@@ -63,26 +59,22 @@ const App = () => {
   };
 
   // -------------------------------------------------------------------------
-  // SOCKET & LOGIC ENGINE
+  // SOCKET LOGIC
   // -------------------------------------------------------------------------
   useEffect(() => {
     socket.on('connect', () => {
-      console.log("SOCKET CONNECTED");
       setConnectionStatus('CONNECTED');
     });
 
     socket.on('disconnect', () => {
-      console.log("SOCKET DISCONNECTED");
       setConnectionStatus('DISCONNECTED');
-      setClinicalStatus('NORMAL'); // Reset alarm on disconnect
+      setClinicalStatus('NORMAL'); // Reset to avoid stuck processing
       stopAlarmSound();
     });
 
     socket.on('vitals', (payload) => {
-      // ---> DEBUG LOG (Latency Verification) <---
-      console.log("SOCKET DATA @", Date.now(), payload);
+      setLastUpdated(new Date());
 
-      // 1. Handle Disconnected Signal from Backend Watchdog
       if (payload.status === 'DISCONNECTED') {
         setConnectionStatus('DISCONNECTED');
         setData({ heart_rate: '--', spo2: '--' });
@@ -91,36 +83,28 @@ const App = () => {
         return;
       }
 
-      // 2. Process Live Data
       setConnectionStatus('CONNECTED');
       setData({ heart_rate: payload.heart_rate, spo2: payload.spo2 });
 
-      // 3. DERIVE CLINICAL STATUS (Instant Logic)
-      const hr = payload.heart_rate;
-      const spo2 = payload.spo2;
+      const hr = parseInt(payload.heart_rate) || 0;
+      const spo2 = parseInt(payload.spo2) || 0;
       let newStatus = 'NORMAL';
 
-      // Rules
       if (hr > 120 || spo2 < 90) newStatus = 'CRITICAL';
       else if (hr > 100 || spo2 < 94) newStatus = 'WARNING';
 
       setClinicalStatus(newStatus);
 
-      // 4. TRIGGER ALARM (Immediate)
       if (newStatus === 'CRITICAL') {
-        if (!isAudioMuted) {
-          playAlarmSound();
-        }
+        if (!isAudioMuted) playAlarmSound();
       } else {
-        // Auto-Reset: If patient stabilizes, stop sound AND reset mute
         stopAlarmSound();
         if (newStatus === 'NORMAL') setIsAudioMuted(false);
       }
 
-      // 5. Update Graph
       setHistory(prev => {
         const nav = [...prev, { hr, spo2, time: Date.now() }];
-        return nav.slice(-50); // Keep last 50 points
+        return nav.slice(-200); // Keep more history for scrolling
       });
     });
 
@@ -130,173 +114,114 @@ const App = () => {
       socket.off('vitals');
       stopAlarmSound();
     };
-  }, [isAudioMuted]); // Re-bind listener if mute state changes to respect new logic
+  }, [isAudioMuted]);
 
-  // -------------------------------------------------------------------------
-  // HANDLERS
-  // -------------------------------------------------------------------------
   const handleAcknowledge = () => {
     stopAlarmSound();
-    setIsAudioMuted(true); // Silences sound only, visual alert remains
+    setIsAudioMuted(true);
   };
 
-  // Resuming Audio Context on user click (Browser Policy)
-  useEffect(() => {
-    const resumeAudio = () => {
-      if (audioRef.current?.state === 'suspended') audioRef.current.resume();
-    };
-    window.addEventListener('click', resumeAudio);
-    return () => window.removeEventListener('click', resumeAudio);
-  }, []);
-
-
   // -------------------------------------------------------------------------
-  // RENDER (Professional Bedside Monitor Design)
+  // RENDER (ULTRA-PREMIUM LAYOUT)
   // -------------------------------------------------------------------------
-  const getStatusColor = (s) => {
-    if (s === 'CRITICAL') return 'text-red-500 border-red-500 bg-red-950/20';
-    if (s === 'WARNING') return 'text-yellow-400 border-yellow-400 bg-yellow-950/20';
-    return 'text-[#00ff9d] border-[#00ff9d] bg-emerald-950/20'; // Medical Green
-  };
-
   return (
-    <div className="w-screen h-screen bg-[#050505] text-[#e0e0e0] font-mono flex flex-col overflow-hidden selection:bg-none">
+    <div className={clsx(
+      "w-screen h-screen flex flex-col overflow-hidden relative selection:bg-none transition-colors duration-1000",
+      clinicalStatus === 'CRITICAL' ? "bg-red-950/20" : "bg-black"
+    )}>
+
+      {/* VIGNETTE RED FLASH (CRITICAL) */}
+      <div className={clsx(
+        "absolute inset-0 pointer-events-none z-50 transition-opacity duration-300 radial-overlay",
+        clinicalStatus === 'CRITICAL' ? "opacity-100 animate-pulse-slow bg-gradient-to-r from-red-900/40 via-transparent to-red-900/40" : "opacity-0"
+      )} style={{ boxShadow: 'inset 0 0 150px rgba(255,0,0,0.5)' }} />
 
       {/* --- HEADER --- */}
-      <header className="h-16 border-b border-[#333] flex items-center justify-between px-6 bg-[#0a0a0a]">
+      <header className="h-14 flex items-center justify-between px-6 border-b border-panel-border bg-panel-bg backdrop-blur-md z-40">
         <div className="flex items-center gap-4">
-          <div className="text-xl font-bold tracking-tight text-[#888]">ICU MONITORING SYSTEM</div>
-          <div className="h-6 w-px bg-[#333]" />
-          <div className="text-lg font-bold text-white tracking-widest">UNIT 01 • BED A</div>
+          <Menu className="text-gray-500 w-5 h-5 cursor-pointer hover:text-white transition-colors" />
+          <div className="flex flex-col">
+            <h1 className="text-lg font-bold font-sans tracking-widest text-white leading-none">
+              VITAL<span className="text-medical-cyan">EYE</span>
+            </h1>
+            <span className="text-[10px] text-gray-400 font-mono tracking-[0.3em] uppercase">Advanced ICU Monitoring</span>
+          </div>
         </div>
 
-        <div className={clsx(
-          "px-4 py-1.5 rounded text-sm font-bold tracking-wider flex items-center gap-2 uppercase",
-          connectionStatus === 'CONNECTED'
-            ? (clinicalStatus === 'CRITICAL' ? "bg-red-600 text-white animate-pulse" : "bg-[#003300] text-[#00ff9d]")
-            : "bg-orange-900/50 text-orange-500 border border-orange-500"
-        )}>
-          {connectionStatus === 'CONNECTED' ? <Wifi size={16} /> : <WifiOff size={16} />}
-          {connectionStatus === 'CONNECTED' ? connectionStatus : 'DISCONNECTED'}
+        {/* Center: Alert Banner */}
+        {clinicalStatus === 'CRITICAL' && (
+          <div className="absolute left-1/2 -translate-x-1/2 bg-medical-red px-12 py-1 rounded-b-lg shadow-[0_0_30px_rgba(255,0,60,0.6)] animate-flash-critical z-50">
+            <span className="text-black font-black tracking-widest text-lg uppercase">CRITICAL ALERT</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-6 font-mono text-xs">
+          <div className="flex items-center gap-2 text-gray-400">
+            <span>{lastUpdated ? lastUpdated.toLocaleTimeString() : '--:--:--'}</span>
+          </div>
+          <div className={clsx(
+            "flex items-center gap-2 px-3 py-1 rounded border tracking-wider transition-all duration-300",
+            connectionStatus === 'CONNECTED'
+              ? "border-medical-green/30 text-medical-green bg-medical-green/5"
+              : "border-medical-red/50 text-medical-red animate-pulse bg-medical-red/10"
+          )}>
+            {connectionStatus === 'CONNECTED' ? <Wifi size={14} /> : <WifiOff size={14} />}
+            {connectionStatus === 'CONNECTED' ? 'ONLINE' : 'OFFLINE'}
+          </div>
+          <Battery className="w-5 h-5 text-medical-green" />
         </div>
       </header>
 
-      {/* --- ALERT BANNER (Starts Hidden) --- */}
-      {clinicalStatus === 'CRITICAL' && (
-        <div className="bg-red-600 text-white text-center py-2 font-black tracking-[0.2em] animate-pulse text-lg uppercase shadow-[0_0_50px_rgba(220,38,38,0.5)] z-50">
-          ⚠️ CRITICAL VITALS DETECTED
-        </div>
-      )}
+      {/* --- MAIN GRID --- */}
+      <main className="flex-1 p-4 grid grid-cols-12 grid-rows-[3fr_2fr] gap-4 z-30 relative">
 
-      {/* --- MAIN DISPLAY --- */}
-      <div className="flex-1 p-6 grid grid-rows-[3fr_2fr] gap-6 relative">
-
-        {/* VITAL CARDS ROW */}
-        <div className="grid grid-cols-2 gap-6">
-
-          {/* HEART RATE */}
-          <div className={clsx(
-            "rounded relative border-2 flex flex-col justify-between p-6 transition-colors duration-200",
-            getStatusColor(connectionStatus === 'DISCONNECTED' ? 'NORMAL' : clinicalStatus)
-          )}>
-            <div className="flex justify-between items-start">
-              <span className="text-sm font-bold opacity-70 tracking-widest">HEART RATE</span>
-              <Activity size={24} className={clsx(clinicalStatus === 'CRITICAL' && "animate-pulse")} />
-            </div>
-
-            <div className="flex items-end justify-center">
-              <span className="text-[10rem] leading-none font-bold tracking-tighter tabular-nums drop-shadow-2xl">
-                {data.heart_rate}
-              </span>
-            </div>
-
-            <div className="flex justify-between items-end">
-              <span className="text-4xl font-bold opacity-60">BPM</span>
-              <div className="text-right">
-                <div className="text-xs opacity-50 uppercase">Limits</div>
-                <div className="font-bold">60 - 100</div>
-              </div>
-            </div>
-          </div>
-
-          {/* SpO2 */}
-          <div className={clsx(
-            "rounded relative border-2 flex flex-col justify-between p-6 transition-colors duration-200",
-            // SpO2 often stays blue/cyan unless extremely low, but can follow alert color
-            clinicalStatus === 'CRITICAL' && data.spo2 < 90
-              ? 'text-red-500 border-red-500 bg-red-950/20'
-              : 'text-cyan-400 border-cyan-400 bg-cyan-950/20'
-          )}>
-            <div className="flex justify-between items-start">
-              <span className="text-sm font-bold opacity-70 tracking-widest">SpO₂</span>
-              <Droplets size={24} />
-            </div>
-
-            <div className="flex items-end justify-center">
-              <span className="text-[10rem] leading-none font-bold tracking-tighter tabular-nums drop-shadow-2xl">
-                {data.spo2}
-              </span>
-            </div>
-
-            <div className="flex justify-between items-end">
-              <span className="text-4xl font-bold opacity-60">%</span>
-              <div className="text-right">
-                <div className="text-xs opacity-50 uppercase">Limits</div>
-                <div className="font-bold">90 - 100</div>
-              </div>
-            </div>
-          </div>
+        {/* TOP LEFT: HERO HEART RATE (8 cols) */}
+        <div className="col-span-12 md:col-span-8 row-span-1">
+          <HeroHeartRate
+            heartRate={data.heart_rate}
+            history={history}
+            status={clinicalStatus}
+          />
         </div>
 
-        {/* GRAPH ROW */}
-        <div className="border border-[#333] bg-[#080808] rounded relative p-4">
-          <div className="absolute top-2 left-4 text-xs font-bold text-[#888] tracking-widest uppercase flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            Real-Time ECG Pleth
-          </div>
-          <div className="w-full h-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history}>
-                <XAxis dataKey="time" hide />
-                <YAxis domain={['auto', 'auto']} hide />
-                <Line
-                  type="monotone"
-                  dataKey="hr"
-                  stroke={clinicalStatus === 'CRITICAL' ? '#ef4444' : '#00ff9d'}
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+        {/* TOP RIGHT: SPO2 PANEL (4 cols) */}
+        <div className="col-span-12 md:col-span-4 row-span-1">
+          <SpO2Panel
+            spo2={data.spo2}
+            history={history}
+            status={clinicalStatus}
+          />
         </div>
 
+        {/* BOTTOM: FULL WIDTH ECG (Entire Row) */}
+        <div className="col-span-12 row-span-1">
+          <GlassPanel className="h-full p-2 relative">
+            <div className="absolute top-2 left-4 z-20 flex gap-4 text-xs font-mono text-gray-400">
+              <span className="text-medical-green font-bold">II</span>
+              <span>25 mm/s</span>
+              <span>FILTER ON</span>
+            </div>
+            <ECGGraph data={history} status={clinicalStatus} />
+          </GlassPanel>
+        </div>
+      </main>
 
-        {/* ALERT OVERLAY / CONTROLS (Floating) */}
-        {clinicalStatus === 'CRITICAL' && (
-          <div className="absolute bottom-6 right-6 flex items-center gap-4 z-50">
-            <button
-              onClick={handleAcknowledge}
-              disabled={isAudioMuted}
-              className={clsx(
-                "px-8 py-4 rounded font-bold text-xl uppercase tracking-widest shadow-2xl flex items-center gap-3 transition-transform active:scale-95",
-                isAudioMuted
-                  ? "bg-gray-700 text-gray-400 cursor-not-allowed border border-gray-600"
-                  : "bg-yellow-500 text-black animate-bounce border-2 border-yellow-300"
-              )}>
-              {isAudioMuted ? <VolumeX /> : <Volume2 />}
-              {isAudioMuted ? "ALARM SILENCED" : "ACKNOWLEDGE"}
-            </button>
-          </div>
-        )}
+      {/* --- EMERGENCY CONTROLS (Floating Bottom Right) --- */}
+      <div className="absolute bottom-6 right-6 z-50">
+        <button
+          onClick={handleAcknowledge}
+          className={clsx(
+            "flex items-center gap-3 px-6 py-3 rounded-lg font-bold font-sans tracking-widest text-sm uppercase transition-all duration-300 shadow-xl backdrop-blur-md border",
+            clinicalStatus === 'CRITICAL' && !isAudioMuted
+              ? "bg-medical-yellow text-black border-medical-yellow animate-bounce"
+              : "bg-black/80 text-gray-400 border-gray-700 hover:text-white"
+          )}
+        >
+          {isAudioMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+          {isAudioMuted ? "ALARM SILENCED" : "ACKNOWLEDGE"}
+        </button>
       </div>
 
-      {/* --- FOOTER --- */}
-      <footer className="h-8 bg-[#0a0a0a] border-t border-[#333] flex items-center justify-between px-6 text-[10px] text-[#444] uppercase">
-        <div>Live data via IoT Gateway • Latency: &lt;50ms</div>
-        <div>System Active • {new Date().toLocaleTimeString()}</div>
-      </footer>
     </div>
   );
 };
