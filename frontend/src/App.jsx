@@ -26,6 +26,7 @@ function App() {
 
     // 2. Single Event Listener (New Backend Spec: "vitals")
     socket.on('vitals', (data) => {
+      console.log("LIVE DATA:", data);
       // Logic Fix: Trust Data > Status Packet
       if (data.heart_rate && data.spo2) {
         // Valid Data Arrived -> Recover Connection
