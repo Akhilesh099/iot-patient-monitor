@@ -6,6 +6,11 @@ if (!URL) {
     console.error("CRITICAL ERROR: VITE_API_URL is missing in environment variables. Connection will fail.");
 }
 
-const socket = io(URL);
+const socket = io(URL, {
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1000
+});
 
 export default socket;
