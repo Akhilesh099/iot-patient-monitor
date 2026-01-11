@@ -26,28 +26,14 @@ function App() {
 
     // 2. Single Event Listener (New Backend Spec: "vitals")
     socket.on('vitals', (data) => {
-      // data: { heart_rate, spo2, status, timestamp } OR { status: "DISCONNECTED" }
-
-      const newStatus = data.status || 'NORMAL';
-
-      if (newStatus === 'DISCONNECTED') {
-        setDeviceStatus('DISCONNECTED');
-        setDeviceConnected(false);
-      } else {
-        setDeviceStatus(newStatus === 'CRITICAL' ? 'CRITICAL' : 'ONLINE');
+      // Logic Fix: Trust Data > Status Packet
+      if (data.heart_rate && data.spo2) {
+        // Valid Data Arrived -> Recover Connection
         setDeviceConnected(true);
-        setVitals(prev => ({ ...prev, ...data, status: newStatus }));
 
-        // Trigger Alert if Critical
-        if (newStatus === 'CRITICAL') {
-          setAlert({
-            message: '⚠️ CRITICAL VITALS DETECTED',
-            details: { hr: data.heart_rate, spo2: data.spo2 }
-          });
-        } else {
-          // Clear alert if Normal
-          setAlert(null);
-        }
+        const newStatus = data.status || 'NORMAL';
+        setDeviceStatus(newStatus === 'CRITICAL' ? 'CRITICAL' : 'ONLINE');
+        setVitals(prev => ({ ...prev, ...data, status: newStatus }));
 
         // Update History
         setHistory(prev => {
@@ -55,6 +41,19 @@ function App() {
           if (newHistory.length > 50) newHistory.shift();
           return newHistory;
         });
+
+        if (newStatus === 'CRITICAL') {
+          setAlert({
+            message: '⚠️ CRITICAL VITALS DETECTED',
+            details: { hr: data.heart_rate, spo2: data.spo2 }
+          });
+        } else {
+          setAlert(null);
+        }
+      } else if (data.status === 'DISCONNECTED') {
+        // Explicit Disconnect Packet -> Set Disconnected
+        setDeviceConnected(false);
+        setDeviceStatus('DISCONNECTED');
       }
     });
 

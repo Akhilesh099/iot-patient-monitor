@@ -71,10 +71,12 @@ app.post("/api/data", (req, res) => {
 // DISCONNECT WATCHDOG
 // --------------------
 setInterval(() => {
-    // User code had 5000ms here in the prompt. I will respect that.
     if (Date.now() - lastDataTime > 5000) {
-        status = "DISCONNECTED";
-        io.emit("vitals", { status });
+        io.emit("vitals", {
+            status: "DISCONNECTED",
+            heart_rate: null,
+            spo2: null
+        });
     }
 }, 3000);
 
