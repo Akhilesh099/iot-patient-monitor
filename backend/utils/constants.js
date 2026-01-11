@@ -5,11 +5,11 @@ module.exports = {
   },
   EVENTS: {
     VITALS_UPDATE: 'vitals_update',
-    ALERT_TRIGGERED: 'alert_triggered',
-    ALERT_CLEARED: 'alert_cleared',
-    DEVICE_DISCONNECTED: 'device_disconnected'
+    // Renamed to match strict user spec
+    CRITICAL_ALERT: 'critical_alert',
+    DEVICE_STATUS: 'device_status'
   },
   TIMEOUTS: {
-    DEVICE_DISCONNECT_MS: 5000 // 5 seconds without data = disconnected
+    DEVICE_DISCONNECT_MS: 10000 // 10 seconds as per request
   }
 };

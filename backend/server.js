@@ -13,7 +13,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*", // Allow all origins for this demo
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
@@ -26,6 +26,7 @@ app.use(express.json());
 const monitorService = new MonitorService(io);
 
 // Routes
+// Use /api as base, so /api/data works
 app.use('/api', apiRoutes(monitorService));
 
 // Socket.io Connection

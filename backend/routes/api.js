@@ -4,7 +4,7 @@ const router = express.Router();
 module.exports = (monitorService) => {
 
     // ESP32 posts data to this endpoint
-    router.post('/vitals', (req, res) => {
+    router.post('/data', (req, res) => {
         const data = req.body;
 
         // Basic Validation
