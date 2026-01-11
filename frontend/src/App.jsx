@@ -11,6 +11,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [alert, setAlert] = useState(null);
   const [deviceStatus, setDeviceStatus] = useState('DISCONNECTED'); // Default to disconnected until data arrives
+  const [deviceConnected, setDeviceConnected] = useState(false); // Helper for UI toggles
 
   useEffect(() => {
     // 1. Connection Logic
@@ -18,49 +19,48 @@ function App() {
       console.log('Socket Connected');
     });
 
-    // 2. Initial Data
-    socket.on('initial_data', (data) => {
-      setHistory(data);
-      if (data.length > 0) {
-        const latest = data[data.length - 1];
-        setVitals(latest);
-        setDeviceStatus('ONLINE');
+    socket.on('disconnect', () => {
+      setDeviceConnected(false);
+    });
+
+    // 2. Single Event Listener (New Backend Spec: "vitals")
+    socket.on('vitals', (data) => {
+      // data: { heart_rate, spo2, status, timestamp } OR { status: "DISCONNECTED" }
+
+      const newStatus = data.status || 'NORMAL';
+
+      if (newStatus === 'DISCONNECTED') {
+        setDeviceStatus('DISCONNECTED');
+        setDeviceConnected(false);
+      } else {
+        setDeviceStatus(newStatus === 'CRITICAL' ? 'CRITICAL' : 'ONLINE');
+        setDeviceConnected(true);
+        setVitals(prev => ({ ...prev, ...data, status: newStatus }));
+
+        // Trigger Alert if Critical
+        if (newStatus === 'CRITICAL') {
+          setAlert({
+            message: '⚠️ CRITICAL VITALS DETECTED',
+            details: { hr: data.heart_rate, spo2: data.spo2 }
+          });
+        } else {
+          // Clear alert if Normal
+          setAlert(null);
+        }
+
+        // Update History
+        setHistory(prev => {
+          const newHistory = [...prev, data];
+          if (newHistory.length > 50) newHistory.shift();
+          return newHistory;
+        });
       }
-    });
-
-    // 3. Live Updates (heart_rate, spo2, status)
-    socket.on('vitals_update', (data) => {
-      setVitals(data);
-      setDeviceStatus('ONLINE'); // Data flow = Online
-      setHistory(prev => {
-        const newHistory = [...prev, data];
-        if (newHistory.length > 50) newHistory.shift();
-        return newHistory;
-      });
-
-      // Auto-clear alert if status returns to normal in the stream
-      if (data.status === 'NORMAL') {
-        setAlert(null);
-      }
-    });
-
-    // 4. Critical Alert Event (Trigger Popup)
-    socket.on('critical_alert', (data) => {
-      setAlert(data);
-    });
-
-    // 5. Device Status Changes (e.g., Timeout)
-    socket.on('device_status', (data) => {
-      // data = { status: "DISCONNECTED" } or "ONLINE"
-      setDeviceStatus(data.status);
     });
 
     return () => {
       socket.off('connect');
-      socket.off('initial_data');
-      socket.off('vitals_update');
-      socket.off('critical_alert');
-      socket.off('device_status');
+      socket.off('disconnect');
+      socket.off('vitals');
     };
   }, []);
 
@@ -116,14 +116,14 @@ function App() {
             value={isDisconnected ? '--' : vitals.heart_rate}
             unit="BPM"
             type="heart" // Will use Red
-            isCritical={isCritical && !isDisconnected && vitals.heart_rate > 120}
+            isCritical={isCritical && !isDisconnected}
           />
           <VitalCard
             title="SpO₂ %"
             value={isDisconnected ? '--' : vitals.spo2}
             unit="%"
             type="spo2" // Will use Blue
-            isCritical={isCritical && !isDisconnected && vitals.spo2 < 90}
+            isCritical={isCritical && !isDisconnected}
           />
         </div>
 
