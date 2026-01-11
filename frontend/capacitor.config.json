@@ -1,0 +1,8 @@
+{
+    "appId": "com.vitaleye.monitor",
+    "appName": "VitalEye",
+    "webDir": "dist",
+    "server": {
+        "androidScheme": "https"
+    }
+}
