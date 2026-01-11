@@ -1,46 +1,91 @@
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const cors = require('cors');
-const dotenv = require('dotenv');
-
-dotenv.config();
-
-const MonitorService = require('./services/monitorService');
-const apiRoutes = require('./routes/api');
+const express = require("express");
+const http = require("http");
+const cors = require("cors");
+const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+const io = new Server(server, {
+    cors: { origin: "*" }
 });
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Services
-const monitorService = new MonitorService(io);
+// --------------------
+// STATE
+// --------------------
+let lastDataTime = Date.now();
+let status = "DISCONNECTED";
 
-// Routes
-// Use /api as base, so /api/data works
-app.use('/api', apiRoutes(monitorService));
-
-// Socket.io Connection
-io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
-
-    // Send initial history on connect
-    socket.emit('initial_data', monitorService.getHistory());
-
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
-    });
+// --------------------
+// ROOT (optional, avoids confusion)
+// --------------------
+app.get("/", (req, res) => {
+    res.send("IoT Patient Backend is running");
 });
 
+// --------------------
+// HEALTH CHECK
+// --------------------
+app.get("/health", (req, res) => {
+    res.json({ status: "OK" });
+});
+
+// --------------------
+// MAIN DATA ENDPOINT
+// --------------------
+app.post("/api/data", (req, res) => {
+    const { heart_rate, spo2 } = req.body;
+
+    if (!heart_rate || !spo2) {
+        return res.status(400).json({ error: "Invalid data" });
+    }
+
+    lastDataTime = Date.now();
+
+    // Alert logic
+    // "If heart_rate > 120 or spo2 < 90" logic from previous context, 
+    // keeping it consistent with the user's snippet logic below.
+    if (heart_rate > 120 || spo2 < 90) {
+        status = "CRITICAL";
+    } else {
+        status = "NORMAL";
+    }
+
+    const payload = {
+        heart_rate,
+        spo2,
+        status,
+        timestamp: new Date().toISOString()
+    };
+
+    console.log("Received:", payload);
+
+    io.emit("vitals", payload);
+
+    res.status(200).json({ success: true });
+});
+
+// --------------------
+// DISCONNECT WATCHDOG
+// --------------------
+setInterval(() => {
+    // User code had 5000ms here in the prompt. I will respect that.
+    if (Date.now() - lastDataTime > 5000) {
+        status = "DISCONNECTED";
+        io.emit("vitals", { status });
+    }
+}, 3000);
+
+// --------------------
+// SOCKET
+// --------------------
+io.on("connection", (socket) => {
+    console.log("Frontend connected");
+});
+
+// --------------------
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
