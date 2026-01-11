@@ -1,211 +1,177 @@
 # VitalEye ICU Monitor 🏥
 
-A real-time IoT-based ICU patient monitoring system that simulates and transmits vital signs (Heart Rate & SpO₂) from a local system to a cloud backend and visualizes them on a live web dashboard with critical alerts.
+**A Real-Time IoT Patient Health Monitoring System**
+
+VitalEye is a full-stack IoT solution designed to simulate a hospital bedside monitor. It collects real-time patient vitals (Heart Rate & SpO₂) from an ESP8266 device (or Python simulator), transmits them to a cloud backend, and visualizes them on a live, responsive React dashboard with critical alert capabilities.
 
 ---
 
-## 📌 Project Overview
+## 🚀 Features
 
-This project demonstrates how patient vitals can be monitored remotely using IoT and web technologies.  
-Vital signs are generated using a Python-based hospital monitor simulator, transmitted via an ESP8266 over Wi-Fi, processed by a cloud backend, and displayed in real time on a responsive ICU-style web interface.
-
-The system is designed to mimic real hospital bedside monitors and supports **critical alerts with visual and audio alarms**.
+- **Real-time Monitoring**: WebSocket-based data streaming with sub-second latency.
+- **Critical Alerts**: Instant visual and audio triggers when Heart Rate > 120 bpm or SpO₂ < 90%.
+- **Live Graphs**: Dynamic visualization of patient vital trends using Recharts.
+- **Reliability**: Automatic device disconnection detection.
+- **PWA Support**: Installable on desktop and mobile devices for a native-app experience.
+- **Mobile Ready**: Fully responsive design suitable for tablets and phones.
+- **Demo Modes**: Supports hardware (ESP8266) and software-only simulation.
 
 ---
 
-## 🧩 System Architecture
+## 🏗️ System Architecture
 
+```ascii
++------------------+       +------------------+       +------------------+
+|   Python Sim     |       |     ESP8266      |       |   Cloud Backend  |
+| (Patient Vitals) |------>| (Wi-Fi Gateway)  |------>| (Node.js/Express)|
++------------------+  USB  +------------------+ HTTPS +------------------+
+                                                                |
+                                                                | Socket.IO
+                                                                v
+                                                      +------------------+
+                                                      |   Web Dashboard  |
+                                                      |   (React/Vite)   |
+                                                      +------------------+
 ```
 
-Python ICU Monitor
-↓ (USB Serial)
-ESP8266 (Wi-Fi)
-↓ (HTTP POST)
-Cloud Backend (Render)
-↓ (Socket.IO)
-Web Dashboard (Vercel)
-
-````
-
 ---
 
-## ⚙️ Components Used
+## 🛠️ Tech Stack
 
-### Hardware
-- ESP8266 (NodeMCU ESP-12E)
-- USB Cable
-- Wi-Fi Network
-
-### Software
-- Python 3.x (Tkinter, PySerial)
-- Arduino IDE (ESP8266 Core)
-- Node.js (Backend)
-- Socket.IO (Real-time communication)
-- React + Vite (Frontend)
-- Render (Backend Hosting)
-- Vercel (Frontend Hosting)
-
----
-
-## 🧪 Features
-
-- ✅ Real-time Heart Rate & SpO₂ monitoring
-- ✅ Python-based ICU monitor simulator
-- ✅ ESP8266 serial data ingestion
-- ✅ Cloud-based data transmission
-- ✅ Live web dashboard
-- ✅ Critical alert detection
-- ✅ Audible ICU alarm
-- ✅ Acknowledge alert option
-- ✅ Professional ICU-style UI
-- ✅ Automatic disconnect detection
-- ✅ PWA Support (Installable App)
+- **Hardware**: ESP8266 (NodeMCU ESP-12E)
+- **Firmware**: Arduino C++
+- **Simulator**: Python 3 (Tkinter, PySerial)
+- **Backend**: Node.js, Express, Socket.IO
+- **Frontend**: React, Vite, TailwindCSS, Recharts
+- **Communication**: REST API (Ingestion), WebSockets (Broadcast)
+- **Deployment**: Render (Backend), Vercel (Frontend)
 
 ---
 
 ## 🚀 How It Works
 
-1. **Python Application**
-   - Simulates patient vitals.
-   - Sends data every second via USB serial in the format:
-     ```
-     HR:78,SpO2:97
-     ```
-
-2. **ESP8266**
-   - Listens to serial input from Python.
-   - Parses incoming vitals.
-   - Sends data to the backend using HTTPS POST requests.
-
-3. **Backend (Node.js)**
-   - Receives vitals via `/api/data`.
-   - Immediately emits live data using Socket.IO.
-   - Detects device disconnection.
-
-4. **Frontend Dashboard**
-   - Receives live data via sockets.
-   - Displays vitals instantly.
-   - Triggers visual and audio alerts on critical conditions.
+1.  **Python Simulator**: Generates synthetic patient data (Heart Rate, SpO₂) and sends it via USB Serial to the ESP8266.
+    -   *Format*: `HR:78,SpO2:97`
+2.  **ESP8266 Gateway**: Reads the serial data, parses it, and transmits it to the cloud backend via HTTPS POST requests.
+3.  **Backend Processing**: The Node.js server receives the data, validates it, and broadcasts it immediately to all connected clients using Socket.IO.
+4.  **Frontend Visualization**: The React dashboard receives the live stream, updates the charts instanly, and checks for critical thresholds to trigger alerts.
 
 ---
 
 ## 🚨 Alert Logic
 
-Alerts are triggered **instantly on the frontend** when:
-- Heart Rate > 120 BPM  
-- SpO₂ < 90 %
+The system is designed for immediate response to critical conditions. Alerts are triggered **locally on the frontend** to ensure zero latency.
 
-Alert includes:
-- Red warning banner
-- Pulsing vital cards
-- ICU alarm sound
-- Acknowledge button
+-   **Heart Rate > 120 BPM**: High heart rate warning.
+-   **SpO₂ < 90%**: Low oxygen saturation warning.
+
+**Response**:
+-   🔴 Red full-screen warning banner.
+-   🔊 Audible ICU alarm sound.
+-   💓 Pulsing vital checklists.
+-   ✅ "Acknowledge" button to silence the alarm.
 
 ---
 
-## 🛠️ Setup Instructions
+## 📝 Setup Instructions
 
-### 1️⃣ ESP8266 Setup
-- Board: **NodeMCU 1.0 (ESP-12E)**
-- Baud Rate: **115200**
-- Upload ESP8266 serial-listener code
-- Configure Wi-Fi credentials and backend URL
+### 1. ESP8266 Setup (Hardware)
+1.  Connect **NodeMCU ESP-12E** to your PC.
+2.  Open **Arduino IDE** and select the board.
+3.  Flash the firmware located in `backend/firmware_reference.cpp`.
+4.  **Configuration**:
+    -   Update `ssid` and `password` with your Wi-Fi credentials.
+    -   Update `serverUrl` to your deployed backend URL.
 
-### 2️⃣ Python Simulator
-```bash
-python hospital_monitor.py
-````
+### 2. Python Simulator (Data Source)
+1.  Install Python 3.x.
+2.  Run the simulator script:
+    ```bash
+    python hospital_monitor.py
+    ```
+3.  **Note**: Ensure the Arduino Serial Monitor is **CLOSED** before running the script.
 
-⚠️ Ensure Arduino Serial Monitor is CLOSED.
+### 3. Backend Setup
+1.  Navigate to the backend directory:
+    ```bash
+    cd backend
+    ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the server:
+    ```bash
+    npm start
+    ```
+    *Runs on http://localhost:5000*
 
-### 3️⃣ Backend (Render)
+### 4. Frontend Setup
+1.  Navigate to the frontend directory:
+    ```bash
+    cd frontend
+    ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the development server:
+    ```bash
+    npm run dev
+    ```
+    *Runs on http://localhost:5173*
 
-```bash
-cd backend
-npm install
-node server.js
-```
+---
 
-### 4️⃣ Frontend (Vercel / Local)
+## 📦 Deployment
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+### Backend (Render/Heroku/Railway)
+-   **Build Command**: `npm install`
+-   **Start Command**: `node server.js`
+-   **Env Vars**: `PORT=5000` (optional)
 
-Add environment variable:
-
-```
-VITE_API_URL=https://<your-render-backend>.onrender.com
-```
+### Frontend (Vercel/Netlify)
+-   **Build Command**: `npm run build`
+-   **Output Directory**: `dist`
+-   **Configuration**: Set `VITE_API_URL` environment variable to your deployed backend URL.
 
 ---
 
 ## 📊 Demo Modes
 
-* **Python → ESP8266 → Cloud (Control Mode)**
-* **ESP8266 Standalone Simulation Mode**
-* **Cloud-only UI Testing**
+1.  **Full Loop (Control Mode)**: Python Sim → Serial → ESP8266 → Cloud → Dashboard.
+2.  **Standalone Simulation**: ESP8266 generating random data internally (if Serial unavailable).
+3.  **Cloud Testing**: Send manual POST requests to the backend using Postman/Curl.
 
 ---
 
-## 🧠 Key Learning Outcomes
-
-* Serial communication with microcontrollers
-* Real-time IoT data pipelines
-* Cloud backend integration
-* WebSocket-based live dashboards
-* Medical alert system design
-* Debugging multi-layer systems
+## 🧠 Learning Outcomes
+-   Interfacing Python with Microcontrollers via Serial.
+-   Building real-time Full-Stack IoT pipelines.
+-   Handling high-frequency data streams with WebSockets.
+-   Implementing critical thresholds and audio alerts in React.
+-   Deploying a distributed system (Hardware + Cloud + Web).
 
 ---
 
 ## 🎓 Academic Relevance
-
-This project demonstrates:
-
-* IoT architecture
-* Embedded systems
-* Cloud computing
-* Real-time data visualization
-* Healthcare technology applications
-
-Ideal for:
-
-* Mini Project
-* Final Year Project
-* IoT & Embedded Systems coursework
+This project is ideal for **Final Year Projects** or **IoT Coursework**, demonstrating:
+-   **IoT Architecture**: Edge (ESP8266) to Cloud to Client.
+-   **Embedded Systems**: Serial communication and Wi-Fi handling.
+-   **Web Development**: Modern React UI and PWA implementation.
 
 ---
 
 ## ⚠️ Disclaimer
-
-This project is for **educational purposes only**.
-It is **not intended for real medical use**.
+This project is for **educational purposes only**. It is **not** a certified medical device and should not be used for actual patient monitoring or diagnosis.
 
 ---
 
 ## 👤 Author
-
 **Akhilesh Sirimalla**
 IoT & Embedded Systems Enthusiast
 
 ---
 
-## ⭐ If you like this project
-
-Give it a ⭐ on GitHub!
-
-```
-
----
-
-If you want next, I can:
-- Simplify it for **college submission**
-- Make a **one-page report**
-- Add **screenshots section**
-- Write **viva questions & answers**
-
-Just tell me 👍
-```
+## 📄 License
+MIT License. Created for Academic Demonstration.
