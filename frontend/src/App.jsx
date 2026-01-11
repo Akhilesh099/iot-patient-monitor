@@ -78,21 +78,31 @@ const App = () => {
       if (data.heart_rate && data.spo2) {
         setDeviceConnected(true);
         setVitals(data);
-        const newStatus = data.status || 'NORMAL';
-        setStatus(newStatus);
+
+        // INSTANT ALERT LOGIC (Zero Latency)
+        // Derive critical status directly from raw data
+        const isCriticalRaw = (data.heart_rate > 120 || data.spo2 < 90);
+        const derivedStatus = isCriticalRaw ? 'CRITICAL' : 'NORMAL';
+
+        setStatus(derivedStatus);
 
         // 1. AUTO-DISMISS: If normal, clear alert & reset acknowledgment
-        if (newStatus === 'NORMAL') {
+        if (!isCriticalRaw) {
           stopAlarm();
-          setAcknowledged(false); // Reset so next alarm triggers
+          if (acknowledged) setAcknowledged(false); // Reset so next alarm triggers
         }
 
         // 2. SMART ALARM: Trigger only if CRITICAL and NOT acknowledged
-        else if (newStatus === 'CRITICAL') {
+        // This runs synchronously with data arrival
+        else {
           if (!acknowledged) {
+            // Ensure audio context is running
+            if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+              audioContextRef.current.resume();
+            }
             playAlarm();
           } else {
-            stopAlarm(); // Ensure it stays off if acknowledged
+            stopAlarm();
           }
         }
 
