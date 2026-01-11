@@ -21,6 +21,7 @@ function App() {
 
     socket.on('disconnect', () => {
       setDeviceConnected(false);
+      setDeviceStatus('DISCONNECTED');
     });
 
     // 2. Single Event Listener (New Backend Spec: "vitals")
