@@ -1,4 +1,4 @@
-# IoT Patient Health Monitoring System 🏥
+# VitalEye ICU Monitor 🏥
 
 A full-stack IoT solution simulating a hospital bedside monitor. It collects real-time patient vitals (Heart Rate & SpO₂) from an ESP32 device (or simulator), processes them for critical thresholds, and displays them on a live React dashboard.
 
@@ -7,6 +7,7 @@ A full-stack IoT solution simulating a hospital bedside monitor. It collects rea
 - **Critical Alerts**: Instant triggers when Heart Rate > 120 bpm or SpO₂ < 90%.
 - **Live Graphs**: Dynamic visualization of patient trends.
 - **Reliability**: Auto-detects device disconnection.
+- **PWA Support**: Installable on desktop and mobile devices for a native-app experience.
 - **Mobile Ready**: Responsive design suitable for tablets and phones.
 
 ---
