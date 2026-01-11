@@ -61,7 +61,7 @@ app.post("/api/data", (req, res) => {
     };
 
     console.log("Received:", payload);
-
+    console.log("EMITTING VITALS:", payload);
     io.emit("vitals", payload);
 
     res.status(200).json({ success: true });
