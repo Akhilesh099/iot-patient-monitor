@@ -15,6 +15,9 @@ export default function ICUDashboard() {
     const audioContextRef = useRef(null);
     const intervalRef = useRef(null);
 
+    // Debounce Timer for returning to normal
+    const normalDebounceRef = useRef(null);
+
     // Initialize Audio Context on User Interaction
     useEffect(() => {
         const initAudio = () => {
@@ -102,15 +105,31 @@ export default function ICUDashboard() {
 
                 if (isNowCritical) {
                     setStatus("CRITICAL");
+
+                    // If we go critical, cancel any pending "return to normal" timer immediately
+                    if (normalDebounceRef.current) {
+                        clearTimeout(normalDebounceRef.current);
+                        normalDebounceRef.current = null;
+                    }
+
                     // Only start alarm if NOT acknowledged
                     if (!acknowledgedRef.current) {
                         startAlarm();
                     }
                 } else {
-                    // Patient is stable
+                    // Patient is stable (Normal)
                     setStatus("NORMAL");
                     stopAlarm();
-                    acknowledgedRef.current = false; // Reset latch so NEXT crisis will trigger alarm
+
+                    // DEBOUNCE / HYSTERESIS:
+                    // Only reset the 'acknowledged' latch if the patient remains stable for 3 seconds.
+                    // This prevents noisy data from accidentally re-triggering the alarm immediately.
+                    if (!normalDebounceRef.current) {
+                        normalDebounceRef.current = setTimeout(() => {
+                            acknowledgedRef.current = false; // Reset latch so NEXT crisis will trigger alarm
+                            normalDebounceRef.current = null;
+                        }, 3000);
+                    }
                 }
             }
         };
