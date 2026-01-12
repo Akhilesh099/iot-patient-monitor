@@ -8,41 +8,62 @@ export default function ICUDashboard() {
     const [status, setStatus] = useState("CONNECTED");
     const [critical, setCritical] = useState(false);
 
-    // Use AudioContext for reliable alarm generation without external assets
+    // Ref to track if the CURRENT critical session has been acknowledged
+    const acknowledgedRef = useRef(false);
+
+    // Audio Refs
     const audioContextRef = useRef(null);
-    const oscillatorRef = useRef(null);
     const intervalRef = useRef(null);
 
-    const startAlarm = () => {
-        if (intervalRef.current) return; // Already running
-
-        const playBeep = () => {
+    // Initialize Audio Context on User Interaction
+    useEffect(() => {
+        const initAudio = () => {
             if (!audioContextRef.current) {
                 audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
             }
             if (audioContextRef.current.state === 'suspended') {
                 audioContextRef.current.resume();
             }
+        };
+
+        window.addEventListener('click', initAudio);
+        window.addEventListener('touchstart', initAudio);
+        return () => {
+            window.removeEventListener('click', initAudio);
+            window.removeEventListener('touchstart', initAudio);
+        };
+    }, []);
+
+    const startAlarm = () => {
+        // If already running or acknowledged, do nothing
+        if (intervalRef.current || acknowledgedRef.current) return;
+
+        const playTone = () => {
+            if (!audioContextRef.current) return;
+            if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
 
             const osc = audioContextRef.current.createOscillator();
             const gain = audioContextRef.current.createGain();
 
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(800, audioContextRef.current.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(600, audioContextRef.current.currentTime + 0.2);
+            // New Sound: High-Pitch Pulsing Square Wave (Medical Style)
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(880, audioContextRef.current.currentTime); // High A5
+            osc.frequency.setValueAtTime(1100, audioContextRef.current.currentTime + 0.1); // Jump to C#6
 
-            gain.gain.setValueAtTime(0.5, audioContextRef.current.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioContextRef.current.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.1, audioContextRef.current.currentTime);
+            gain.gain.linearRampToValueAtTime(0.1, audioContextRef.current.currentTime + 0.1);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioContextRef.current.currentTime + 0.3);
 
             osc.connect(gain);
             gain.connect(audioContextRef.current.destination);
 
             osc.start();
-            osc.stop(audioContextRef.current.currentTime + 0.25);
+            osc.stop(audioContextRef.current.currentTime + 0.3);
         };
 
-        playBeep();
-        intervalRef.current = setInterval(playBeep, 500);
+        playTone();
+        // Faster urgency: 3 times a second
+        intervalRef.current = setInterval(playTone, 330);
     };
 
     const stopAlarm = () => {
@@ -52,12 +73,14 @@ export default function ICUDashboard() {
         }
     };
 
-    useEffect(() => {
-        // Initial connection handling
-        socket.on("connect", () => {
-            setStatus("CONNECTED");
-        });
+    const acknowledgeAlert = () => {
+        stopAlarm();
+        acknowledgedRef.current = true; // Latch: Don't sound again until we return to normal first
+        // We keep the visual red state (critical=true) to show danger, but sound is off
+    };
 
+    useEffect(() => {
+        socket.on("connect", () => setStatus("CONNECTED"));
         socket.on("disconnect", () => {
             setStatus("DISCONNECTED");
             setHr("--");
@@ -65,35 +88,35 @@ export default function ICUDashboard() {
             stopAlarm();
         });
 
-        // Handle incoming data
-        // Supports both 'liveData' (from user snippet) and 'vitals' (from previous backend implementation)
-        // to ensure compatibility with whatever the backend is emitting.
         const handleData = (data) => {
-            // Logic from user snippet
             if (data.heart_rate !== undefined && data.spo2 !== undefined) {
-                setHr(data.heart_rate);
-                setSpo2(data.spo2);
-
-                // Logic from user snippet: hr > 120 || spo2 < 90
-                // Converting to numbers just in case
                 const numHr = parseInt(data.heart_rate);
                 const numSpo2 = parseInt(data.spo2);
 
-                const isCritical = numHr > 120 || numSpo2 < 90;
+                setHr(numHr);
+                setSpo2(numSpo2);
 
-                setCritical(isCritical);
-                setStatus(isCritical ? "CRITICAL" : "NORMAL");
+                const isNowCritical = numHr > 120 || numSpo2 < 90;
 
-                if (isCritical) {
-                    startAlarm();
+                setCritical(isNowCritical);
+
+                if (isNowCritical) {
+                    setStatus("CRITICAL");
+                    // Only start alarm if NOT acknowledged
+                    if (!acknowledgedRef.current) {
+                        startAlarm();
+                    }
                 } else {
+                    // Patient is stable
+                    setStatus("NORMAL");
                     stopAlarm();
+                    acknowledgedRef.current = false; // Reset latch so NEXT crisis will trigger alarm
                 }
             }
         };
 
         socket.on("liveData", handleData);
-        socket.on("vitals", handleData); // Fallback for existing backend
+        socket.on("vitals", handleData);
 
         return () => {
             socket.off("liveData");
@@ -103,11 +126,6 @@ export default function ICUDashboard() {
             stopAlarm();
         };
     }, []);
-
-    const acknowledgeAlert = () => {
-        stopAlarm();
-        setCritical(false);
-    };
 
     return (
         <div className="icu-container">
@@ -135,9 +153,15 @@ export default function ICUDashboard() {
             {critical && (
                 <div className="alert">
                     <h2>⚠️ CRITICAL PATIENT CONDITION</h2>
-                    <button onClick={acknowledgeAlert}>
-                        ACKNOWLEDGE ALERT
-                    </button>
+                    {acknowledgedRef.current ? (
+                        <button disabled style={{ opacity: 0.5, cursor: 'not-allowed', borderColor: '#555', color: '#888' }}>
+                            ALARM SILENCED
+                        </button>
+                    ) : (
+                        <button onClick={acknowledgeAlert}>
+                            ACKNOWLEDGE ALERT
+                        </button>
+                    )}
                 </div>
             )}
         </div>
