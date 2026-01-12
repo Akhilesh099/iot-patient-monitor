@@ -10,16 +10,16 @@ const HeroHeartRate = ({ heartRate, history, status }) => {
 
     // Dynamic Color Logic
     let colorClass = 'text-medical-green';
-    let glowClass = 'shadow-[0_0_30px_rgba(0,255,65,0.2)]';
+    let glowClass = '';
     let labelColor = 'text-medical-green';
 
     if (status === 'CRITICAL') {
         colorClass = 'text-medical-red animate-pulse-slow';
-        glowClass = 'shadow-[0_0_50px_rgba(255,0,60,0.4)]';
+        glowClass = 'shadow-lg shadow-medical-red/20';
         labelColor = 'text-medical-red';
     } else if (status === 'WARNING') {
         colorClass = 'text-medical-yellow';
-        glowClass = 'shadow-[0_0_30px_rgba(255,219,0,0.2)]';
+        glowClass = 'shadow-lg shadow-medical-yellow/20';
         labelColor = 'text-medical-yellow';
     }
 
@@ -43,31 +43,28 @@ const HeroHeartRate = ({ heartRate, history, status }) => {
                         ECG • HR
                     </span>
                 </div>
-                <div className="mt-2 text-xs font-mono text-gray-500">
+                <div className="mt-2 text-xs font-sans font-medium text-slate-400">
                     Lead II <br /> 1.0mV <br /> A-Fib
                 </div>
                 <div className="mt-8">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">Limits</div>
-                    <div className={clsx("text-lg font-tech font-bold", labelColor)}>60 - 120</div>
+                    <div className="text-[10px] text-slate-400 uppercase tracking-widest font-sans font-bold">Limits</div>
+                    <div className={clsx("text-lg font-sans font-bold", labelColor)}>60 - 120</div>
                 </div>
             </div>
 
             {/* Right: Main Numeric Display */}
             <div className="relative z-10 flex items-baseline">
                 {isNoData ? (
-                    <span className="text-[12rem] leading-none font-tech text-gray-800 animate-pulse">--</span>
+                    <span className="text-[12rem] leading-none font-sans font-bold text-slate-200">--</span>
                 ) : (
                     <span className={clsx(
-                        "text-[12rem] leading-none font-tech tracking-tighter tabular-nums transition-colors duration-200",
-                        colorClass,
-                        "drop-shadow-[0_0_15px_rgba(0,0,0,0.8)]",
-                        // Inner glow via text-shadow
-                        status === 'CRITICAL' ? 'text-glow-xl' : 'text-glow'
+                        "text-[12rem] leading-none font-sans font-bold tracking-tighter tabular-nums transition-colors duration-200",
+                        colorClass
                     )}>
                         {numValue}
                     </span>
                 )}
-                <span className={clsx("text-4xl font-sans font-bold ml-4 opacity-50 absolute -bottom-4 right-0", colorClass)}>
+                <span className={clsx("text-4xl font-sans font-bold ml-4 opacity-40 absolute -bottom-4 right-0", colorClass)}>
                     BPM
                 </span>
             </div>

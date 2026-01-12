@@ -34,8 +34,8 @@ const SpO2Panel = ({ spo2, history, status }) => {
                     </span>
                 </div>
                 <div className="text-right">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">Limits</div>
-                    <div className={clsx("text-sm font-tech font-bold", colorClass)}>90 - 100</div>
+                    <div className="text-[10px] text-slate-400 uppercase tracking-widest font-sans font-bold">Limits</div>
+                    <div className={clsx("text-sm font-sans font-bold", colorClass)}>90 - 100</div>
                 </div>
             </div>
 
@@ -43,10 +43,10 @@ const SpO2Panel = ({ spo2, history, status }) => {
             <div className="flex items-center justify-between z-10 flex-1">
                 <div className="relative">
                     {isNoData ? (
-                        <span className="text-[6rem] leading-none font-tech text-gray-800">--</span>
+                        <span className="text-[6rem] leading-none font-sans font-bold text-slate-200">--</span>
                     ) : (
                         <span className={clsx(
-                            "text-[6rem] leading-none font-tech tracking-tighter tabular-nums text-glow",
+                            "text-[6rem] leading-none font-sans font-bold tracking-tighter tabular-nums",
                             colorClass
                         )}>
                             {numValue}
@@ -55,13 +55,13 @@ const SpO2Panel = ({ spo2, history, status }) => {
                 </div>
 
                 {/* Saturation Bar Indicator */}
-                <div className="h-32 w-4 bg-gray-900 rounded-full overflow-hidden border border-gray-800 relative mx-4">
+                <div className="h-32 w-4 bg-slate-100 rounded-full overflow-hidden border border-slate-200 relative mx-4 shadow-inner">
                     <div
                         className={clsx("absolute bottom-0 left-0 right-0 transition-all duration-500 ease-out", barColor)}
-                        style={{ height: `${isNoData ? 0 : numValue}%`, opacity: 0.8 }}
+                        style={{ height: `${isNoData ? 0 : numValue}%`, opacity: 1 }}
                     />
                     {/* Safe Zone Marker */}
-                    <div className="absolute top-[10%] left-0 right-0 h-[10%] bg-green-500/20 pointer-events-none" />
+                    <div className="absolute top-[10%] left-0 right-0 h-[10%] bg-emerald-500/10 pointer-events-none" />
                 </div>
             </div>
 

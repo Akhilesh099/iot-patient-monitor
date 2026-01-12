@@ -11,20 +11,20 @@ export default {
                 tech: ['"Share Tech Mono"', 'monospace'], // The hardware look
             },
             colors: {
-                'medical-green': '#00ff41', // Matrix/Medical Green
-                'medical-green-dim': 'rgba(0, 255, 65, 0.1)',
+                'medical-green': '#10b981', // Emerald 500
+                'medical-green-dim': 'rgba(16, 185, 129, 0.1)',
 
-                'medical-cyan': '#00f3ff', // Sci-Fi Cyan
-                'medical-cyan-dim': 'rgba(0, 243, 255, 0.1)',
+                'medical-cyan': '#0ea5e9', // Sky 500
+                'medical-cyan-dim': 'rgba(14, 165, 233, 0.1)',
 
-                'medical-yellow': '#ffdb00', // Warning Yellow
-                'medical-yellow-dim': 'rgba(255, 219, 0, 0.1)',
+                'medical-yellow': '#f59e0b', // Amber 500
+                'medical-yellow-dim': 'rgba(245, 158, 11, 0.1)',
 
-                'medical-red': '#ff003c', // Emergency Red
-                'medical-red-dim': 'rgba(255, 0, 60, 0.1)',
+                'medical-red': '#f43f5e', // Rose 500
+                'medical-red-dim': 'rgba(244, 63, 94, 0.1)',
 
-                'panel-bg': 'rgba(10, 10, 12, 0.65)', // Glass panel background
-                'panel-border': 'rgba(255, 255, 255, 0.08)',
+                'panel-bg': '#ffffff', // White
+                'panel-border': '#e2e8f0', // Slate 200
             },
             animation: {
                 'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
